@@ -1,0 +1,128 @@
+---
+title: "Week4PredictionAssignment"
+author: "Xia Wenwen"
+date: "05/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning = FALSE)
+```
+
+## Executive Summary
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.   
+
+```{r init}
+library(caret)
+library(gbm)
+library(randomForest)
+library(corrplot)
+library(RColorBrewer)
+set.seed(3000)
+
+training_dat = read.csv("pml-training.csv")
+testing_dat = read.csv("pml-testing.csv")
+```
+
+## Feature Extraction and Data Prepration
+Select sensor-related raw variables as predictors. There are totally 4 groups of variables:  
+1. Belt-related variables  
+2. Arm-related variables  
+3. Dumbell-related variables  
+4. Forearm-related variables  
+
+```{r feature}
+belt_group <- c("roll_belt", "pitch_belt", "yaw_belt", "gyros_belt_x", "gyros_belt_y",
+                "gyros_belt_z", "accel_belt_x", "accel_belt_y", "accel_belt_z", 
+                "magnet_belt_x", "magnet_belt_y", "magnet_belt_z")
+
+arm_group <- c("roll_arm", "pitch_arm", "yaw_arm", "gyros_arm_x", "gyros_arm_y",
+               "gyros_arm_z", "accel_arm_x", "accel_arm_y", "accel_arm_z",
+               "magnet_arm_x", "magnet_arm_y", "magnet_arm_z")
+
+dumbell_group <- c("roll_dumbbell", "pitch_dumbbell", "yaw_dumbbell", "gyros_dumbbell_x",
+                   "gyros_dumbbell_y", "gyros_dumbbell_z", "accel_dumbbell_x", "accel_dumbbell_y",
+                   "accel_dumbbell_z", "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z")
+
+forearm_group <- c("roll_forearm", "pitch_forearm", "yaw_forearm", "gyros_forearm_x", 
+                   "gyros_forearm_y", "gyros_forearm_z", "accel_forearm_x", "accel_forearm_y",
+                   "accel_forearm_z", "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z")
+
+outcome <- c("classe")
+
+training_set <- subset(training_dat, select = c(belt_group, arm_group, 
+                                                dumbell_group, forearm_group, outcome))
+testing_set <- subset(testing_dat, select = c(belt_group, arm_group,
+                                              dumbell_group, forearm_group))
+```
+
+Evaluate the correlations of the variables with respect to "classe".  
+```{r correlation}
+training_eva <- training_set
+training_eva$classe <- as.numeric(as.factor(training_eva$classe))
+M <-cor(training_eva)
+corrplot(M, type="upper", order="hclust", tl.cex = 0.6,
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+  
+Focus on rows and colomns with "classe", we can find the positive and negative correlations 
+between the other variable and "classe".  
+
+Prepare the training and testing data with 0.75 ratio.  
+``` {r train_test_ratio}
+inTrain = createDataPartition(training_set$classe, p = 3/4)[[1]]
+training = training_set[ inTrain,]
+testing = training_set[-inTrain,]
+dim(training)
+dim(testing)
+```
+  
+## Build Model with Cross Validation  
+Create 10 folds for cross validation in train control.  
+```{r cv}
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+```
+Choose the random forest model, and train the data with ntree = 10.  The number of 10 trees is 
+a proper number to balance the performance and accuracy. 
+```{r rf, cache=T}
+rf.model <- train(classe ~ .,data=training,  trControl=train_control, method="rf", prox=FALSE, ntree=10)
+print(rf.model)
+```
+  
+Evaluate the random forest model with training data, and get the in-sample error.  
+```{r rf_train}
+rf.model.train.pred <- predict(rf.model, training)
+train_cm <- confusionMatrix(as.factor(rf.model.train.pred), as.factor(training$classe))
+print(train_cm)
+train_accuracy <- train_cm$overall[[1]]
+print(train_accuracy)
+in_sample_err <- 1- train_accuracy
+print(in_sample_err)
+```
+
+Evaluate the random forest model with testing data, and get the out-of-sample error.  
+```{r rf_test}
+rf.model.test.pred <- predict(rf.model, testing)
+test_cm <- confusionMatrix(as.factor(rf.model.test.pred), as.factor(testing$classe))
+print(test_cm)
+test_accuracy <- test_cm$overall[[1]]
+print(test_accuracy)
+out_of_sample_err <- 1- test_accuracy
+print(out_of_sample_err)
+```
+The out-of-sample error is `r out_of_sample_err`, which is larger than in-sample error `r in_sample_err` 
+due to the over-fitting of random forest model.  
+
+Random forest is one of the most used/accurate algorithms along with boosting. 
+It is extremely important to use cross validation when running random forest algorithms.  
+
+## Predict 20 different test cases  
+Use the 20 test cases to get the predicated classes.  
+```{r pred_20_cases}
+test.case.pred <- predict(rf.model, testing_set)
+print(test.case.pred)
+```
+  
+
+
